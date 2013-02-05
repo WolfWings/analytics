@@ -10,27 +10,72 @@ while getopts ":f:" opt; do case $opt in
 esac; done
 		
 # Memory usage statistics
+#   Nothing special here.
+#
+# Networking usage statistics
+#   Note this breaks the numbers into upper/middle/lower thirds,
+#   so it is able to separate out the daily ebb and flow many
+#   sites encounter and also partition off the 'transition'
+#   periods so they don't pollute the statistics.
 
-sar -r $SARFILE | egrep "^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]" | grep -v "kb" | grep -v "RESTART" | awk '
+sar -r -n DEV $SARFILE | egrep "^[A0-9][v0-9][e:][r0-9][a0-9][g:][e0-9][0-9:]" | grep -v "RESTART" | awk '
 function stddev(item, value) {
 	if (value != "") {
 		stddev_base[item] += value;
 		stddev_sqrt[item] += (value ** 2);
 		stddev_size[item] += 1;
 	} else {
-		return sqrt(stddev_sqrt[item]/stddev_size[item] - (mean(item) ** 2));
+		if (stddev_size[item] > 0) {
+			return sqrt(stddev_sqrt[item]/stddev_size[item] - (mean(item) ** 2));
+		} else {
+			return log(0);
+		}
 	}
 }
 
 function mean(item) {
-	return (stddev_base[item]/stddev_size[item]);
+	if (stddev_size[item] > 0) {
+		return (stddev_base[item]/stddev_size[item]);
+	} else {
+		return log(0);
+	}
 }
 
-{
+BEGIN {
+	mode = "";
+}
+
+{ switch(mode) {
+case "memory":
+	if ($1 == "Average:") {
+		mode = "";
+		break;
+	}
 	stddev("mem_u", ($4 - ($6 + $7)) / 1048576);
 	stddev("mem_b", $6 / 1048576);
 	stddev("mem_c", $7 / 1048576);
-}
+	break;
+case "network":
+	if ($1 == "Average:") {
+		mode = "";
+		break;
+	}
+	stddev(("rx_" $3), $6);
+	stddev(("tx_" $3), $7);
+	values[("rx_" $3)][($1 $2)] = $6;
+	values[("tx_" $3)][($1 $2)] = $7;
+	ifaces[$3] = 1;
+	break;
+default:
+	switch($3) {
+	case "kbmemfree":
+		mode = "memory";
+		break;
+	case "IFACE":
+		mode = "network";
+		break;
+	}
+} }
 
 END {
 	printf "Memory Stats================================================================\n";
@@ -38,41 +83,7 @@ END {
 	printf "Used     %9.2fGB   %9.2fGB\n", mean("mem_u"), stddev("mem_u");
 	printf "Buffer   %9.2fGB   %9.2fGB\n", mean("mem_b"), stddev("mem_b");
 	printf "Cache    %9.2fGB   %9.2fGB\n", mean("mem_c"), stddev("mem_c");
-}'
 
-# Networking usage statistics
-#   Note this breaks the numbers into upper/middle/lower thirds,
-#   so it is able to separate out the daily ebb and flow many
-#   sites encounter and also partition off the 'transition'
-#   periods so they don't pollute the statistics.
-
-sar -n DEV $SARFILE | egrep "^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]" | grep -v "IFACE" | grep -v "RESTART" | awk '
-function stddev(item, value) {
-	if (value != "") {
-		stddev_base[item] += value;
-		stddev_sqrt[item] += (value ** 2);
-		stddev_size[item] += 1;
-	} else {
-		return sqrt(stddev_sqrt[item]/stddev_size[item] - (mean(item) ** 2));
-	}
-}
-
-function mean(item) {
-	return (stddev_base[item]/stddev_size[item]);
-}
-
-{
-	stddev(("rx_" $3), $6);
-	stddev(("tx_" $3), $7);
-	values[("rx_" $3)][($1 $2)] = $6;
-	values[("tx_" $3)][($1 $2)] = $7;
-	ifaces[$3] = 1;
-}
-
-END {
-	printf "Network Stats===============================================================\n";
-	printf "                          R                        T\n";
-	printf "    Device       Average     Std.Dev.     Average     Std.Dev    Summed Peak\n";
 	for (i in values) {
 		min[i] = -log(0);
 		max[i] = 0;
@@ -97,6 +108,9 @@ END {
 			}
 		}
 	}
+	printf "Network Stats===============================================================\n";
+	printf "                          R                        T\n";
+	printf "    Device       Average     Std.Dev.     Average     Std.Dev    Summed Peak\n";
 	for (i in ifaces) {
 		if ((stddev_base[("rx_" i)] >= NR / 100) ||
 		    (stddev_base[("tx_" i)] >= NR / 100)) {
