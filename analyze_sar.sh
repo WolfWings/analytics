@@ -41,6 +41,18 @@ function mean(item) {
 	}
 }
 
+function values(item, value) {
+	if (value != "") {
+		if (item in values_storage) {
+			values_storage[item] = (values_storage[item] SUBSEP value);
+		} else {
+			values_storage[item] = value;
+		}
+	} else {
+		return values_storage[item];
+	}
+}
+
 BEGIN {
 	mode = "";
 }
@@ -62,8 +74,8 @@ case "network":
 	}
 	stddev(("rx_" $3), $6);
 	stddev(("tx_" $3), $7);
-	values[("rx_" $3)][($1 $2)] = $6;
-	values[("tx_" $3)][($1 $2)] = $7;
+	values(("rx_" $3), $6);
+	values(("tx_" $3), $7);
 	ifaces[$3] = 1;
 	break;
 default:
@@ -84,24 +96,26 @@ END {
 	printf "Buffer   %9.2fGB   %9.2fGB\n", mean("mem_b"), stddev("mem_b");
 	printf "Cache    %9.2fGB   %9.2fGB\n", mean("mem_c"), stddev("mem_c");
 
-	for (i in values) {
+	for (i in values_storage) {
+		delete(v);
+		split(values(i), v, SUBSEP);
 		min[i] = -log(0);
 		max[i] = 0;
-		for (j in values[i]) {
-			if (values[i][j] < min[i]) {
-				min[i] = values[i][j];
+		for (j in v) {
+			if (v[j] < min[i]) {
+				min[i] = v[j];
 			}
-			if (values[i][j] > max[i]) {
-				max[i] = values[i][j];
+			if (v[j] > max[i]) {
+				max[i] = v[j];
 			}
 		}
 		upper = (max[i] + max[i] + min[i]) / 3;
 		lower = (max[i] + min[i] + min[i]) / 3;
-		for (j in values[i]) {
-			k = values[i][j];
+		for (j in v) {
+			k = v[j];
 			if (k < lower) {
 				stddev(("_l_" i), k);
-			} else if (values[i][j] <=upper) {
+			} else if (k <=upper) {
 				stddev(("_m_" i), k);
 			} else {
 				stddev(("_u_" i), k);
