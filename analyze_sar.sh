@@ -18,7 +18,7 @@ esac; done
 #   sites encounter and also partition off the 'transition'
 #   periods so they don't pollute the statistics.
 
-sar -r -n DEV $SARFILE | egrep "^[A0-9][v0-9][e:][r0-9][a0-9][g:][e0-9][0-9:]" | grep -v "RESTART" | awk '
+LC_ALL="POSIX" sar -r -n DEV $SARFILE | egrep "^[A0-9][v0-9][e:][r0-9][a0-9][g:][e0-9][0-9:]" | grep -v "RESTART" | awk '
 function stddev(item, value) {
 	if (value != "") {
 		stddev_base[item] += value;
@@ -63,23 +63,23 @@ case "memory":
 		mode = "";
 		break;
 	}
-	stddev("mem_u", ($4 - ($6 + $7)) / 1048576);
-	stddev("mem_b", $6 / 1048576);
-	stddev("mem_c", $7 / 1048576);
+	stddev("mem_u", ($3 - ($5 + $6)) / 1048576);
+	stddev("mem_b", $5 / 1048576);
+	stddev("mem_c", $6 / 1048576);
 	break;
 case "network":
 	if ($1 == "Average:") {
 		mode = "";
 		break;
 	}
-	stddev(("rx_" $3), $6);
-	stddev(("tx_" $3), $7);
-	values(("rx_" $3), $6);
-	values(("tx_" $3), $7);
-	ifaces[$3] = 1;
+	stddev(("rx_" $2), $5);
+	stddev(("tx_" $2), $6);
+	values(("rx_" $2), $5);
+	values(("tx_" $2), $6);
+	ifaces[$2] = 1;
 	break;
 default:
-	switch($3) {
+	switch($2) {
 	case "kbmemfree":
 		mode = "memory";
 		break;
@@ -97,16 +97,16 @@ END {
 	printf "Cache    %9.2fGB   %9.2fGB\n", mean("mem_c"), stddev("mem_c");
 
 	for (i in values_storage) {
-		delete(v);
 		split(values(i), v, SUBSEP);
 		min[i] = -log(0);
 		max[i] = 0;
 		for (j in v) {
-			if (v[j] < min[i]) {
-				min[i] = v[j];
+			k = v[j];
+			if (k < min[i]) {
+				min[i] = k;
 			}
-			if (v[j] > max[i]) {
-				max[i] = v[j];
+			if (k > max[i]) {
+				max[i] = k;
 			}
 		}
 		upper = (max[i] + max[i] + min[i]) / 3;
@@ -126,8 +126,8 @@ END {
 	printf "                          R                        T\n";
 	printf "    Device       Average     Std.Dev.     Average     Std.Dev    Summed Peak\n";
 	for (i in ifaces) {
-		if ((stddev_base[("rx_" i)] >= NR / 100) ||
-		    (stddev_base[("tx_" i)] >= NR / 100)) {
+		if ((stddev_base[("rx_" i)] >= (NR / 100)) ||
+		    (stddev_base[("tx_" i)] >= (NR / 100))) {
 			printf "%6s Total   %8.2f    %8.2f     %8.2f    %8.2f   %5.2fMBit/sec\n", i, mean(("rx_" i)), stddev(("rx_" i)), mean(("tx_" i)), stddev(("tx_" i)), (max[("tx_" i)] + max[("rx_" i)]) / 128;
 			if ((stddev_size[("_l_rx_" i)] > 0) ||
 			    (stddev_size[("_l_tx_" i)] > 0)) {
