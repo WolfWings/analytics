@@ -57,37 +57,35 @@ BEGIN {
 	mode = "";
 }
 
-{ switch(mode) {
-case "memory":
+(mode == "memory") {
 	if ($1 == "Average:") {
 		mode = "";
-		break;
+	} else {
+		stddev("mem_u", ($3 - ($5 + $6)) / 1048576);
+		stddev("mem_b", $5 / 1048576);
+		stddev("mem_c", $6 / 1048576);
 	}
-	stddev("mem_u", ($3 - ($5 + $6)) / 1048576);
-	stddev("mem_b", $5 / 1048576);
-	stddev("mem_c", $6 / 1048576);
-	break;
-case "network":
+}
+
+(mode == "network") {
 	if ($1 == "Average:") {
 		mode = "";
-		break;
+	} else {
+		stddev(("rx_" $2), $5);
+		stddev(("tx_" $2), $6);
+		values(("rx_" $2), $5);
+		values(("tx_" $2), $6);
+		ifaces[$2] = 1;
 	}
-	stddev(("rx_" $2), $5);
-	stddev(("tx_" $2), $6);
-	values(("rx_" $2), $5);
-	values(("tx_" $2), $6);
-	ifaces[$2] = 1;
-	break;
-default:
-	switch($2) {
-	case "kbmemfree":
+}
+
+(mode == "") {
+	if ($2 == "kbmemfree") {
 		mode = "memory";
-		break;
-	case "IFACE":
+	} else if ($2 == "IFACE") {
 		mode = "network";
-		break;
 	}
-} }
+}
 
 END {
 	printf "Memory Stats================================================================\n";
