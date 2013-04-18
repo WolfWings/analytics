@@ -3,7 +3,7 @@ analyzers
 
 Various analysis-automation shell-scripts.
 
-* **pastify.sh** <filename>
+* **pastify.sh** &lt;filename&gt;
 
 	A script to 'bundle' another file and allow transport to a server
 	via simple copy-paste, using a combination of bzip2 and base64
