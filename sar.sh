@@ -18,7 +18,7 @@ esac; done
 #   sites encounter and also partition off the 'transition'
 #   periods so they don't pollute the statistics.
 
-LC_ALL="POSIX" sar -r -n DEV $SARFILE | egrep "^[A0-9][v0-9][e:][r0-9][a0-9][g:][e0-9][0-9:]" | grep -v "RESTART" | awk '
+LC_ALL="POSIX" sar -r -n DEV -u $SARFILE | egrep "^[A0-9][v0-9][e:][r0-9][a0-9][g:][e0-9][0-9:]" | grep -v "RESTART" | awk '
 function is_tier_item(item) {
 }
 
@@ -39,6 +39,14 @@ function values(item, value) {
 	}
 }
 
+function mean(item) {
+	if (stddev_size[item] > 0) {
+		return (stddev_base[item]/stddev_size[item]);
+	} else {
+		return log(0);
+	}
+}
+
 # Calculates the standard-deviation values.
 function stddev(item, value) {
 	if (value != "") {
@@ -48,7 +56,11 @@ function stddev(item, value) {
 		values(item, value);
 	} else {
 		if (stddev_size[item] > 0) {
-			return sqrt(stddev_sqrt[item]/stddev_size[item] - (mean(item) ** 2));
+			if ((stddev_sqrt[item]/stddev_size[item]) > (mean(item) ** 2)) {
+				return sqrt((stddev_sqrt[item]/stddev_size[item]) - (mean(item) ** 2));
+			} else {
+				return log(0);
+			}
 		} else {
 			return log(0);
 		}
@@ -94,37 +106,63 @@ function values_tiers_calculate(item) {
 	}
 }
 
-function mean(item) {
-	if (stddev_size[item] > 0) {
-		return (stddev_base[item]/stddev_size[item]);
-	} else {
-		return log(0);
-	}
-}
-
-function output_network_range(item,   mean, range) {
+function output_range(item,   mean, range) {
 	mean = mean(item);
 	range = stddev(item);
 	if ((mean > log(0)) && (mean < -log(0))) {
 		printf "%8.2f      ", mean;
 	} else {
-		printf "        .       ";
+		printf "    0.00     ";
 	}
 	if ((range > log(0)) && (range < -log(0))) {
 		printf "%8.2f   ", range;
 	} else {
-		printf "        .     ";
+		printf "    0.00   ";
 	}
 }
 
 function output_network_tier(class, title, device) {
 	if ((stddev_size[(class "rx_" device)] > 0) ||
 	    (stddev_size[(class "tx_" device)] > 0)) {
-		printf "%6s %5s   ", i, title;
-		output_network_range((class "rx_" device));
-		output_network_range((class "tx_" device));
+		printf "%6s %5s   ", device, title;
+		output_range((class "rx_" device));
+		output_range((class "tx_" device));
 		printf "\n";
 	}
+}
+
+function output_memory_tier(class, title, item) {
+	if (stddev_size[(class item)] > 0) {
+		printf "%20s   ", title;
+		output_range((class item));
+		printf "\n";
+	}
+}
+
+function output_memory(title, item) {
+	output_memory_tier("", title, item);
+	output_memory_tier("_u_", ("Lower " title), item);
+	output_memory_tier("_m_", ("Midd. " title), item);
+	output_memory_tier("_l_", ("Upper " title), item);
+}
+
+function output_cpu_tier(class, title, item) {
+	if (stddev_size[(class item)] > 0) {
+		printf "%20s   ", title;
+		output_range((class item));
+		printf "\n";
+	}
+}
+
+function output_cpu(title, item) {
+	output_cpu_tier("", title, item);
+	output_cpu_tier("_l_", ("Lower " title), item);
+	output_cpu_tier("_m_", ("Midd. " title), item);
+	output_cpu_tier("_u_", ("Upper " title), item);
+}
+
+function output_title(name) {
+	print substr(("[ " name " ]========================================================================"), 1, 76);
 }
 
 BEGIN {
@@ -151,34 +189,55 @@ BEGIN {
 	}
 }
 
+(mode == "cpu") {
+	if ($1 == "Average:") {
+		mode = "";
+	} else {
+		stddev("cpu_io", $6);
+		stddev("cpu_steal", $7);
+		stddev("cpu_used", 100.0 - $8);
+	}
+}
+
 (mode == "") {
 	if ($2 == "kbmemfree") {
 		mode = "memory";
 	} else if ($2 == "IFACE") {
 		mode = "network";
+	} else if ($2 == "CPU") {
+		mode = "cpu";
 	}
 }
 
 END {
-	printf "Memory Stats================================================================\n";
-	printf "             Average    Plus/Minus\n";
-	printf "Used     %9.2fGB   %9.2fGB\n", mean("mem_u"), stddev("mem_u");
-	printf "Buffer   %9.2fGB   %9.2fGB\n", mean("mem_b"), stddev("mem_b");
-	printf "Cache    %9.2fGB   %9.2fGB\n", mean("mem_c"), stddev("mem_c");
-
 	for (i in values_storage) {
 		values_tiers_calculate(i);
 	}
 
-	printf "Network Stats===============================================================\n";
+	output_title("CPU Stats");
+	output_cpu("Used", "cpu_used");
+	output_cpu("I/O Wait", "cpu_io");
+	output_cpu("Stolen", "cpu_steal");
+
+
+
+	output_title("Memory Stats");
+	printf "                        Average    Plus/Minus    (in Gigabytes)\n";
+	output_memory("Used", "mem_u");
+	output_memory("Buffer", "mem_b");
+	output_memory("Cache", "mem_c");
+
+
+
+	output_title("Network Stats");
 	printf "                        Rx                       Tx\n";
 	printf "    Device      Average    Plus/Minus    Average    Plus/Minus       Peak Tx\n";
 	for (i in ifaces) {
 		if ((stddev_base[("rx_" i)] >= (NR / 100)) ||
 		    (stddev_base[("tx_" i)] >= (NR / 100))) {
 			printf "%6s Total   ", i;
-			output_network_range(("rx_" i));
-			output_network_range(("tx_" i));
+			output_range(("rx_" i));
+			output_range(("tx_" i));
 			printf "%7.2fMbps\n", max[("tx_" i)] / 1024;
 
 			output_network_tier("_l_", "Lower", i);
