@@ -20,14 +20,19 @@ ${DIALOG} \
 	2>>/tmp/chri5631.metadata.$$
 if [ $? -ne 0 ]; then clear; exit; fi
 exec 4<>/tmp/chri5631.metadata.$$
-export NOVA_USERNAME
-export NOVA_API_KEY
+
 export NOVA_PROJECT_ID
-export NOVA_REGION_NAME
-read -u 4 NOVA_API_KEY
-read -u 4 NOVA_USERNAME
 read -u 4 NOVA_PROJECT_ID
+
+export NOVA_USERNAME
+read -u 4 NOVA_USERNAME
+
+export NOVA_API_KEY
+read -u 4 NOVA_API_KEY
+
+export NOVA_REGION_NAME
 read -u 4 NOVA_REGION_NAME
+
 clear
 echo "Finished setting up NOVA."
 echo "Press Ctrl+D or type 'exit' to leave the sub-environment."
